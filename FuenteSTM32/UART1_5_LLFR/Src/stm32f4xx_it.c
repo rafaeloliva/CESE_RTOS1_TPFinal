@@ -203,45 +203,15 @@ void TIM1_UP_TIM10_IRQHandler(void)
 void USART1_IRQHandler(void)
 {
   /* USER CODE BEGIN USART1_IRQn 0 */
-	uint16_t data_byte;
-	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-	if( USART_GetFlagStatus(USART1,USART_FLAG_RXNE) )
+	if( LL_USART_IsActiveFlag_RXNE(USART1) && LL_USART_IsEnabledIT_RXNE(USART1))
 	{
-		//a data byte is received from the user
-		data_byte = USART_ReceiveData(USART1);
 
-		packet_buffer[packet_len++] = (data_byte & 0xFF) ;
+		USART1_Reception_Callback();
+		// moved to main, declared in main.h 18.42019
 
-		if((data_byte == '*' ) && (packet_len == PACK_OK_LEN))
-		{
-			//then packet is ok..
-			//reset the packet_len variable
-			packet_len = 0;
-
-			//notify the CheckMeteoHand task
-			xTaskNotifyFromISR(xTaskHandChkMet,0,eNoAction,&xHigherPriorityTaskWoken);
-		}
-		else if(packet_len > PACK_MAX)
-		{
-			//then packet is corrupt..
-			//reset the packet_len variable
-			packet_len = 0;
-			// notify printError Task
-			xTaskNotifyFromISR(xTaskPrintfErr,0,eNoAction,&xHigherPriorityTaskWoken);
-		}
-        else{
-			// do nothing
-		}
-				
 	}
-	// if the above freertos apis wake up any higher priority task, then yield the processor to the
-	//higher priority task which is just woken up.
 
-	if(xHigherPriorityTaskWoken)
-	{
-		taskYIELD();
-	}
   /* USER CODE END USART1_IRQn 0 */
   /* USER CODE BEGIN USART1_IRQn 1 */
 
@@ -256,38 +226,15 @@ void USART1_IRQHandler(void)
 void USART6_IRQHandler(void)
 {
   /* USER CODE BEGIN USART6_IRQn 0 */
-	uint16_t data_byte;
-	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-	if( USART_GetFlagStatus(USART6,USART_FLAG_RXNE) )
-	{
-		//a data byte is received from the user
-		data_byte = USART_ReceiveData(USART6);
-
-		command_buffer[command_len++] = (data_byte & 0xFF) ;
-
-		if(data_byte == '\r')
+	if( LL_USART_IsActiveFlag_RXNE(USART6) && LL_USART_IsEnabledIT_RXNE(USART6))
 		{
-			//then user is finished entering the data
 
-			//reset the command_len variable
-			command_len = 0;
+			USART6_Reception_Callback();
+			// moved to main, declared in main.h 18.42019
 
-			// lets notify the Display Task
-			// TaskHandle_t xTaskHandleDisplay -  Task 1 Display Handle
-		    // xTaskCreate(vTask_Display,"TASK_DISPLAY-1",500,NULL,1,&xTaskHandleDisplay);
-			xTaskNotifyFromISR(xTaskHandleDisplay,0,eNoAction,&xHigherPriorityTaskWoken);
 		}
 
-	}
 
-	// if the above freertos apis wake up any higher priority task, then yield the processor to the
-	//higher priority task which is just woken up.
-
-	if(xHigherPriorityTaskWoken)
-	{
-		taskYIELD();
-	}
   /* USER CODE END USART6_IRQn 0 */
   /* USER CODE BEGIN USART6_IRQn 1 */
 

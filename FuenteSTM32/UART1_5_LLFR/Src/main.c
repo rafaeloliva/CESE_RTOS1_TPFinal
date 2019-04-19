@@ -145,6 +145,8 @@ void vTask_Process_OutdoorInfo(void *params);  // Task 3 = ProcessOutdoorInfo
 void vTask_Write_Uart6(void *params);          // Task 4 = Write to UART6 -Terminal
 void vTask_PrintError(void *params);           // Task 5 = Imprimeerror
 
+
+
 // Funciones auxiliares
 // Enviar el Queue de salida a UART6
 void vTask_Write_Uart6(void *params);
@@ -417,7 +419,7 @@ void vTask_Process_OutdoorInfo(void *params)
 
 void vTask_PrintError(void *params)
 {
-	char pData[] = "Error en Recepcion"
+	char pData[] = "Error en Recepcion";
 	while(1)
 	{
 		xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
@@ -443,16 +445,21 @@ void vTask_Write_Uart6(void *params)
 }
 
 // Prints message out on UART6..
+// 18.4.2019 Use LL_USART functions as in STM32F4 LL_Examples
 void printmsg(char *msg)
 {
 	for(uint32_t i=0; i < strlen(msg); i++)
 	{
-		while(USART_G )
+		while(!LL_USART_IsActiveFlag_TXE(USART6)){
+			; // Wait forever
+		}
 		// while (USART_GetFlagStatus(USART6,USART_FLAG_TXE) != SET);
-		USART_SendData(USART6,msg[i]);
+		LL_USART_TransmitData8(USART6,msg[i]);
 	}
 
-	while ( USART_GetFlagStatus(USART6,USART_FLAG_TC) != SET);
+	while (!LL_USART_IsActiveFlag_TC(USART6)){
+		;  // Wait again forever
+	}
 
 }
 
@@ -491,6 +498,76 @@ void getArguments(uint8_t *buffer)
 {
 
 
+}
+
+// Funciones de CallBack
+// Callback de USART1 - Recepción (antes en stm32f4xx_it.c, ahora referenciado desde allí)
+void USART1_Reception_Callback(void){
+	uint16_t data_byte;
+	//a data byte is received from the user
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+	data_byte = LL_USART_ReceiveData8(USART1);
+
+	packet_buffer[packet_len++] = (data_byte & 0xFF) ;
+
+	if((data_byte == '*' ) && (packet_len == PACK_OK_LEN))
+			{
+				//then packet is ok..
+				//reset the packet_len variable
+				packet_len = 0;
+
+				//notify the CheckMeteoHand task
+				xTaskNotifyFromISR(xTaskHandleChkMeteo,0,eNoAction,&xHigherPriorityTaskWoken);
+			}
+			else if(packet_len > PACK_OK_LEN)
+			{
+				//then packet is corrupt..
+				//reset the packet_len variable
+				packet_len = 0;
+				// notify printError Task
+				xTaskNotifyFromISR(xTaskHandlePrintErr,0,eNoAction,&xHigherPriorityTaskWoken);
+			}
+	        else{
+				// do nothing
+			}
+	// if the above freertos apis wake up any higher priority task, then yield the processor to the
+	//higher priority task which is just woken up.
+
+	if(xHigherPriorityTaskWoken)
+	{
+		taskYIELD();
+	}
+}
+
+
+// Callback de UART6 - Recepción como terminal (antes en stm32f4xx_it.c, ahora referenciado desde allí
+// via main.h)
+void USART6_Reception_Callback(void){
+	uint16_t data_byte;
+	//a data byte is received from the user
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+	data_byte = LL_USART_ReceiveData8(USART6);
+
+	command_buffer[command_len++] = (data_byte & 0xFF) ;
+
+	if(data_byte == '\r')
+	{
+		//then user is finished entering the data
+
+		//reset the command_len variable
+		command_len = 0;
+
+		// lets notify the Display Task
+		// TaskHandle_t xTaskHandleDisplay -  Task 1 Display Handle
+	    // xTaskCreate(vTask_Display,"TASK_DISPLAY-1",500,NULL,1,&xTaskHandleDisplay);
+		xTaskNotifyFromISR(xTaskHandleDisplay,0,eNoAction,&xHigherPriorityTaskWoken);
+	}
+	// if the above freertos apis wake up any higher priority task, then yield the processor to the
+	//higher priority task which is just woken up.
+	if(xHigherPriorityTaskWoken)
+	{
+		taskYIELD();
+	}
 }
 
 

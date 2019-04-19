@@ -64,7 +64,9 @@ extern "C" {
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
-
+// 18.4.2019 Callbacks de Handlers
+void USART1_Reception_Callback(void);
+void USART6_Reception_Callback(void);
 /* USER CODE BEGIN EFP */
 
 /* USER CODE END EFP */
