@@ -223,6 +223,8 @@ void USART1_IRQHandler(void)
   */
 // USART6_ISR R.Oliva 18.4.2019
 // Hace de terminal con usuario a 115200 por UART6
+#define IMPLEMENT_USART6_ISR_IN_MAIN
+#ifndef IMPLEMENT_USART6_ISR_IN_MAIN
 void USART6_IRQHandler(void)
 {
   /* USER CODE BEGIN USART6_IRQn 0 */
@@ -244,4 +246,5 @@ void USART6_IRQHandler(void)
 /* USER CODE BEGIN 1 */
 
 /* USER CODE END 1 */
+#endif
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

@@ -45,6 +45,9 @@
 #define PKTBUFSIZE  96
 #define PACK_OK_LEN 35
 
+#define DEBUG_USART6
+#define DEBUG_VERBOSE
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -75,7 +78,7 @@ typedef struct PACKET_OK
 //		&out_vbat,&checksum);
 // char okTestCStr[] = "UUU$29335.10156.2562.15100.125.1095";	
 
-//UART6 command structure
+//UART6 command structure Implem 21.4.19
 typedef struct APP_CMD
 {
 	uint8_t COMMAND_NUM;
@@ -86,6 +89,16 @@ typedef struct APP_CMD
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+// Nuevo Menu 21.4.19
+#define TOG_DEMO_U1_SINCOMM_COMMAND 	1
+#define TOG_DEMO_U1_LOOPBK_COMMAND 		2
+#define TOG_LEE_U1_METEO_COMMAND 		3
+#define RTC_READ_DATE_TIME_COMMAND 	    4
+
+// Flag defines Nuevo Menu 21.4.19
+#define DEMO1_OFF   0
+#define DEMO1_ON    1
+
 char TestCStr[] = "UUU$29335.10156.2562.15100.125.1095*QQQ";
 // y sin el tramo final:
 char okTestCStr[] = "UUU$29335.10156.2562.15100.125.1095";	
@@ -106,15 +119,19 @@ char okTestCStr[] = "UUU$29335.10156.2562.15100.125.1095";
 char usr_msg[250]={0};
 
 //task handles
-TaskHandle_t xTaskHandleDisplay  = NULL;   // Task 1 Display Handle
-TaskHandle_t xTaskHandleChkMeteo = NULL;   // Task 2 CheckMeteo Handle
-TaskHandle_t xTaskHandleProcOutd = NULL;   // Task 3 ProcessOutdoorInfo Handle
-TaskHandle_t xTaskHandleWrUart6  = NULL;   // Task 4 Write_Uart6 Handle
+TaskHandle_t xTaskHandleDisplay   = NULL;   // Task 1 Display Handle
+TaskHandle_t xTaskHandleChkMeteo  = NULL;   // Task 2 CheckMeteo Handle
+TaskHandle_t xTaskHandleProcOutd  = NULL;   // Task 3 ProcessOutdoorInfo Handle
+TaskHandle_t xTaskHandleWrUart6   = NULL;   // Task 4 Write_Uart6 Handle
 TaskHandle_t xTaskHandlePrintErr  = NULL;   // Task 5 PrintError
+TaskHandle_t xTaskHandleHeartBeat = NULL;   // Task 6 OLED Heartbeat 21.4.19
+TaskHandle_t xTaskHandleUart6CmdH = NULL;   // Task 7 Uart6 CmdHandling 21.4.19
+TaskHandle_t xTaskHandleUart6CmdP = NULL;   // Task 8 Uart6 CmdProcess 21.4.19
 
 //Queue handle
 QueueHandle_t packet_queue       = NULL;   // ok packets queue handle
 QueueHandle_t output_write_queue = NULL;   // output write queue handle
+QueueHandle_t command_queue      = NULL;   // comandos via UART6 Terminal
 
 //software timer handler
 TimerHandle_t led_timer_handle = NULL;
@@ -124,12 +141,17 @@ uint8_t packet_buffer[PKTBUFSIZE];
 uint8_t packet_len = 0;
 uint8_t command_buffer[20];
 uint8_t command_len =0;
+uint8_t flag_demo_U1_sinCom = DEMO1_OFF;
 
-//Menu por USART 6
+// Menu por USART 6
+// Nuevo menu 21.4.2019
 char menu[]={"\
-\r\nLectura USART METEO----> 1 \
-\r\nEXIT_APP           ----> 0 \
-\r\nType your option here : "};
+\r\nToggle DEMO_UART1 (sinCom)----> 1 \
+\r\nToggle DEMO_UART1 (loopbk)----> 2 \
+\r\nToggle LEE UART1_METEO    ----> 3 \
+\r\nToggle LEE RTC_FECHA+HORA ----> 4 \
+\r\nEXIT_APP                  ----> 0 \
+\r\nTipee su opcion : "};
 
 
 /* USER CODE END PV */
@@ -144,12 +166,15 @@ void vTask_Check_Meteo_packet(void *params);   // Task 2 = Check Meteo Packet
 void vTask_Process_OutdoorInfo(void *params);  // Task 3 = ProcessOutdoorInfo
 void vTask_Write_Uart6(void *params);          // Task 4 = Write to UART6 -Terminal
 void vTask_PrintError(void *params);           // Task 5 = Imprimeerror
+void vTask_HeartBeat(void *params);            // Task 6 = OLED Heartbeat 21.4.19
+void vTask_uart6_cmd_handling(void *params);   // Task 7 = Terminal UART6 Cmd_Handling
+void vTask_uart6_cmd_processing(void *params); // Task 8 = Terminal UART6 proceso comandos
 
 
 
 // Funciones auxiliares
 // Enviar el Queue de salida a UART6
-void vTask_Write_Uart6(void *params);
+// void vTask_Write_Uart6(void *params);
 // Prints message out on UART6..
 void printmsg(char *msg);
 // Enviar Items leidos via UART1
@@ -162,6 +187,18 @@ void print_error_message(char *task_msg);
 uint8_t getCommandCode(uint8_t *buffer);
 // Futuro: comandos UART6 - Terminal - Argumentos
 void getArguments(uint8_t *buffer);
+// Implementado 21.4.19 para comando 1
+void toggle_demoU1_sinCom(char *task_msg);
+// No implementado
+void toggle_demoU1_Comloopbak(void);
+// No implementado
+void toggle_leeU1Meteo(void);
+// Parcial
+void read_rtc_info(char *task_msg);
+// 22 4 2019  -Start Reception Function
+// Rutinal LL requieren habilitación
+// (STMCubeF4 v1_24 - LLNucleo 411 Examples)
+void Start_Reception(void);
 
 
 /* USER CODE END PFP */
@@ -211,11 +248,17 @@ int main(void)
   /* Call init function for freertos objects (in freertos.c) */
   MX_FREERTOS_Init();
 
+  // Start Reception - Habilita Flags USARTs 22.4.2019
+  Start_Reception();
+
   // Create packet queue (up to 10 stripped packets)
   packet_queue = xQueueCreate(10,sizeof(PACKET_OK_t*));
 
   // Create the write queue (up to 30 chars)
   output_write_queue = xQueueCreate(30,sizeof(char*));
+
+  // 21.4.2019 create command queue
+  command_queue = xQueueCreate(10,sizeof(APP_CMD_t*));
 
 
 	// tasks creation - RTOS1
@@ -230,11 +273,11 @@ int main(void)
 	// TaskHandle_t xTaskHandleWrUart6  = NULL;   // Task 4 Write_Uart6 Handle
 
 	
-	if((packet_queue != NULL) && (output_write_queue != NULL))
+	if((packet_queue != NULL) && (output_write_queue != NULL) && (command_queue != NULL))
 	{
 		// Create task-1 vTask_Display
 		// TaskHandle_t xTaskHandleDisplay -  Task 1 Display Handle
-		xTaskCreate(vTask_Display,"TASK_DISPLAY-1",500,NULL,1,&xTaskHandleDisplay);
+		xTaskCreate(vTask_Display,"TASK_DISPLAY-1",500,NULL,2,&xTaskHandleDisplay);
 
 		// Create task-2 vTask_Check_Meteo_packet
 		// TaskHandle_t xTaskHandleChkMeteo - Task 2 CheckMeteo Handle
@@ -251,6 +294,16 @@ int main(void)
 		// Create task-5 vTask_PrintError
 		// TaskHandle_t xPrintError  - Task 5
 		xTaskCreate(vTask_PrintError,"TASK5-PRINTERROR",500,NULL,2,&xTaskHandlePrintErr);
+
+		// Create task-6 vTask_HeartBeat
+		// TaskHandle_t HeartBeat  - Task 6
+		xTaskCreate(vTask_HeartBeat,"TASK6-HrtBEAT",500,NULL,2,&xTaskHandleHeartBeat);
+
+		//create task-7 U6 cmd handle
+		xTaskCreate(vTask_uart6_cmd_handling,"TASK7-U6CMD-HANDLING",500,NULL,2,&xTaskHandleUart6CmdH);
+
+		//create task-8 U6 cmd process
+		xTaskCreate(vTask_uart6_cmd_processing,"TASK8-U6CMD-PROCESS",500,NULL,2,&xTaskHandleUart6CmdP);
 
 	    // start the scheduler
 	    vTaskStartScheduler();
@@ -324,11 +377,12 @@ void SystemClock_Config(void)
 // RTOSi - Implementacion de Task handlers
 // TP Final R.Oliva 2019
 
+// Task 1 - Display Menu por UART6
 void vTask_Display(void *params)
 {
-
 char *pData = menu;
-
+printmsg("\n\rTskDi1");
+vTaskDelay(20);
 	while(1)
 	{
 		xQueueSend(output_write_queue,&pData,portMAX_DELAY);
@@ -339,19 +393,36 @@ char *pData = menu;
 	}
 }
 
+// Task2 vTask_Check_Meteo_packet - Verifica lo que llega
+// de METEO por UART1, y lo pasa a la cola de paquetes ok
+// En modo Demo, con uint8_t flag_demo_U1_sinCom = DEMO1_ON
+// envía cada 1000 ms un paquete de muestra - sino en OFF
+// espera notificación de un paquete via UART1
+// 23.4.2019 Corregir acceso:new_packet-> packet_content
 void vTask_Check_Meteo_packet(void *params)
 {
-	uint8_t command_code=0;
-	// typedef struct PACKET_OK
-	// { 
-	//    uint8_t packet_content[PACK_OK_LEN+1];
-	// } PACKET_OK_t;
-	PACKET_OK_t *new_packet;
-
-
+// uint8_t command_code=0;
+// typedef struct PACKET_OK
+// {
+//    uint8_t packet_content[PACK_OK_LEN+1];
+// } PACKET_OK_t;
+PACKET_OK_t *new_packet;
+#ifdef DEBUG_VERBOSE
+   printmsg("\n\rTskChM2");
+#endif
+vTaskDelay(20);
 	while(1)
 	{
-		xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
+		// Si no está en modo Demo, esperar indefinidamente a UART1
+		// en modo "Demo1" generar un string de muestra cada 1000 ms
+		if (flag_demo_U1_sinCom == DEMO1_OFF)
+		{
+		 xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
+		}
+		else
+		{
+		 vTaskDelay(pdMS_TO_TICKS(1000));
+		}
 		//1. allocate space..
 		new_packet = (PACKET_OK_t*) pvPortMalloc(sizeof(PACKET_OK_t));
 
@@ -360,11 +431,11 @@ void vTask_Check_Meteo_packet(void *params)
 		// requires miniprintf.c / .h pair
 		// make a copy of the buffer_packet to new_packet
 		#ifdef PACKET_COPIAR
-		mini_snprintf(new_packet, PACK_OK_LEN,"%s",packet_buffer)
+		mini_snprintf(new_packet->packet_content, PACK_OK_LEN,"%s",packet_buffer)
 		#else
 		// Copiamos uno de muestra
 	    // char okTestCStr[] = "UUU$29335.10156.2562.15100.125.1095";	
-		sprintf(new_packet,"%s",okTestCStr);
+		sprintf(new_packet->packet_content,"%s",okTestCStr);
 		#endif
 		taskEXIT_CRITICAL();
 
@@ -375,7 +446,9 @@ void vTask_Check_Meteo_packet(void *params)
 
 }
 
-
+// Task3 vTask_Process_OutdoorInfo - el paquete
+// de METEO por UART1 es procesado para sacar la info
+// 23.4.2019 Idem Corregir acceso:new_packet-> packet_content
 void vTask_Process_OutdoorInfo(void *params)
 {
 	PACKET_OK_t *new_packet;
@@ -386,13 +459,16 @@ void vTask_Process_OutdoorInfo(void *params)
 	int16_t out_t,out_b, out_w_speed,out_vbat;
     int16_t out_w_dir;
 	int16_t checksum;  // temporary variables
-	uint32_t toggle_duration = pdMS_TO_TICKS(500);
+	//uint32_t toggle_duration = pdMS_TO_TICKS(500);
+    #ifdef DEBUG_VERBOSE
+	 printmsg("\n\rTskPrOu3");
+    #endif
 
 	while(1)
 	{
 		xQueueReceive(packet_queue,(void*)&new_packet,portMAX_DELAY);
 
-		items = sscanf(new_packet,"%4s%5d.%5d.%4d.%5d.%3d.%4x",&out_id,&out_t,
+		items = sscanf(new_packet->packet_content,"%4s%5hd.%5hd.%4hd.%5hd.%3hd.%4hx",&out_id,&out_t,
 		&out_b, &out_w_dir,&out_w_speed, &out_vbat,&checksum);
 		
 		print_items_message(task_msg, items);
@@ -416,10 +492,12 @@ void vTask_Process_OutdoorInfo(void *params)
 	}
 }
 
-
+// Task4 vTask_PrintError solo en caso de recepcion erronea UART1
 void vTask_PrintError(void *params)
 {
 	char pData[] = "Error en Recepcion";
+	printmsg("\n\rTskPe5");
+	vTaskDelay(20);
 	while(1)
 	{
 		xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
@@ -431,10 +509,12 @@ void vTask_PrintError(void *params)
 
 
 
-
+// Task5 vTask_Write_UART6 todo lo que llega a la cola de output va a la UART6 a 115200
 void vTask_Write_Uart6(void *params)
 {
 	char *pData = NULL;
+	printmsg("\n\rTskU4..");
+	vTaskDelay(20);
 	while(1)
 	{
 
@@ -443,6 +523,97 @@ void vTask_Write_Uart6(void *params)
 
 	}
 }
+
+// Task 6 = OLED Heartbeat 21.4.19
+void vTask_HeartBeat(void *params)
+{
+
+	while(1){
+		vTaskDelay(pdMS_TO_TICKS(500));
+		// OLED_GPIO_Port, OLED_Pin
+		LL_GPIO_TogglePin(OLED_GPIO_Port,OLED_Pin);
+	}
+}
+
+// void vTask_uart6_cmd_handling - decodifica el comando que le llega del usuario
+// a traves de terminal UART6, según el menu, y lo manda a la cola de comandos
+void vTask_uart6_cmd_handling(void *params)   // Task 7 = Terminal UART6 Cmd_Handling
+{
+	uint8_t command_code=0;
+	APP_CMD_t *new_cmd;
+	char dbg_msg[20];
+
+	while(1)
+	{
+		xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
+		//1. send command to queue
+		#ifdef DEBUG_USART6
+			sprintf(dbg_msg,"\r\nRxCmh");
+			printmsg(dbg_msg);
+		#endif
+		new_cmd = (APP_CMD_t*) pvPortMalloc(sizeof(APP_CMD_t));
+
+		taskENTER_CRITICAL();
+		command_code = getCommandCode(command_buffer);
+		new_cmd->COMMAND_NUM = command_code;
+		getArguments(new_cmd->COMMAND_ARGS);
+		taskEXIT_CRITICAL();
+		#ifdef DEBUG_USART6
+			sprintf(dbg_msg,"\r\n Cm%d",command_code);
+			printmsg(dbg_msg);
+		#endif
+		// enviar al command queue 21.4.19
+		xQueueSend(command_queue,&new_cmd,portMAX_DELAY);
+	}
+}
+
+
+// void vTask6_cmd_processing - ejecuta los comandos de la cola
+// de comandos alimentada por el task anterior
+// Task 8 = Terminal UART6 proceso comandos
+void vTask_uart6_cmd_processing(void *params)
+{
+	APP_CMD_t *new_cmd;
+	char task_msg[50];
+
+	// uint32_t toggle_duration = pdMS_TO_TICKS(500);
+
+	while(1)
+	{
+		xQueueReceive(command_queue,(void*)&new_cmd,portMAX_DELAY);
+
+		#ifdef DEBUG_USART6
+			sprintf(task_msg,"\r\n C_N:%d", new_cmd->COMMAND_NUM);
+			printmsg(task_msg);
+		#endif
+
+		if(new_cmd->COMMAND_NUM == TOG_DEMO_U1_SINCOMM_COMMAND)
+		{
+			toggle_demoU1_sinCom(task_msg);      // Opcion 1
+		}
+		else if(new_cmd->COMMAND_NUM == TOG_DEMO_U1_LOOPBK_COMMAND)
+		{
+			toggle_demoU1_Comloopbak();  // Opcion 2
+		}
+		else if(new_cmd->COMMAND_NUM == TOG_LEE_U1_METEO_COMMAND)
+		{
+			toggle_leeU1Meteo();
+		}
+		else if(new_cmd->COMMAND_NUM == RTC_READ_DATE_TIME_COMMAND )
+		{
+			read_rtc_info(task_msg);
+		}else
+		{
+			print_error_message(task_msg);
+		}
+
+		// liberar memoria asignada a new_cmd
+		vPortFree(new_cmd);
+
+	}
+}
+
+
 
 // Prints message out on UART6..
 // 18.4.2019 Use LL_USART functions as in STM32F4 LL_Examples
@@ -463,7 +634,7 @@ void printmsg(char *msg)
 
 }
 
-// Funciones de Salida al UART6 
+// Funciones de Salida al UART6 18.4.19
 
 // Salida 1 - items recibidos de UART1
 void print_items_message(char *task_msg, int16_t items)
@@ -486,7 +657,7 @@ void print_error_message(char *task_msg)
 	xQueueSend(output_write_queue,&task_msg,portMAX_DELAY);
 }
 
-// Futuro: comandos UART6 - Terminal
+// Comandos UART6 - Terminal 21.4.19 Sacar el ASCII
 uint8_t getCommandCode(uint8_t *buffer)
 {
 
@@ -499,6 +670,84 @@ void getArguments(uint8_t *buffer)
 
 
 }
+
+// Funcion ejecución Comando 1 - Pasar a modo Demo sin COM1, sin METEO
+// Togglea el flag uint8_t flag_demo_U1_sinCom = DEMO1_OFF/ON
+// que afecta a la tarea vTask_Check_Meteo_packet()
+// En modo Demo, con uint8_t flag_demo_U1_sinCom = DEMO1_ON
+// envía cada 1000 ms un "paqueteOK" de muestra - sino en OFF
+// espera notificación de un paquete via UART1
+
+void toggle_demoU1_sinCom(char *task_msg)
+{
+	uint8_t flag_copy = 0;
+	// Hacer una copia del estado actual del Flag e invertirlo
+	taskENTER_CRITICAL();
+	flag_copy = flag_demo_U1_sinCom;
+	if (flag_demo_U1_sinCom == DEMO1_OFF){
+		flag_demo_U1_sinCom = DEMO1_ON;
+	    }
+		else {
+		flag_demo_U1_sinCom = DEMO1_OFF;
+		}
+	taskEXIT_CRITICAL();
+	// Si estaba en OFF, aviso que pasamos a ON, sinó al reves
+	if (flag_copy == DEMO1_OFF){
+		sprintf( task_msg,"\r\n Demo sin Com = ON\r\n");
+		}
+	else {
+		sprintf( task_msg,"\r\n Demo sin Com = OFF\r\n");
+	    }
+	xQueueSend(output_write_queue,&task_msg,portMAX_DELAY);
+}
+
+// Funcion toggle_demoU1_Comloopbak() - demo con Loopback
+// No implementada
+void toggle_demoU1_Comloopbak(void)
+{
+
+}
+
+// Funcion toggle_leeU1Meteo() - lectura METEO directa
+// No implementada
+void toggle_leeU1Meteo(void)
+{
+
+}
+
+// Funcion read_rtc_info(task_msg) - RTC needs to be included 22.4.2019
+void read_rtc_info(char *task_msg)
+{
+#ifdef LOW_LEVEL_RTC
+	RTC_TimeTypeDef RTC_time;
+	RTC_DateTypeDef RTC_date;
+	//read time and date from RTC peripheral of the microcontroller
+	RTC_GetTime(RTC_Format_BIN, &RTC_time);
+	RTC_GetDate(RTC_Format_BIN, &RTC_date);
+
+	sprintf(task_msg,"\r\nTime: %02d:%02d:%02d \r\n Date : %02d-%2d-%2d \r\n",RTC_time.RTC_Hours,RTC_time.RTC_Minutes,RTC_time.RTC_Seconds, \
+									RTC_date.RTC_Date,RTC_date.RTC_Month,RTC_date.RTC_Year );
+	xQueueSend(output_write_queue,&task_msg,portMAX_DELAY);
+#endif
+}
+
+// Taken from
+void Start_Reception(void){
+	// Habilitar Flags limpieza y Recepcion
+	sprintf(usr_msg,"\r\n Inicio Recepcion UART6 \r\n");
+	printmsg(usr_msg);
+	// Limpiar Overrun Flag UART6
+	LL_USART_ClearFlag_ORE(USART6);
+	// Habilitar Interrupcion pr RXNE (Rx Not Empty)
+	LL_USART_EnableIT_RXNE(USART6);
+	sprintf(usr_msg,"\r\n Inicio Recepcion UART1 \r\n");
+	printmsg(usr_msg);
+	// Limpiar Overrun Flag UART1
+	LL_USART_ClearFlag_ORE(USART1);
+	// Habilitar Interrupcion pr RXNE (Rx Not Empty)
+	LL_USART_EnableIT_RXNE(USART1);
+}
+
 
 // Funciones de CallBack
 // Callback de USART1 - Recepción (antes en stm32f4xx_it.c, ahora referenciado desde allí)
@@ -539,16 +788,28 @@ void USART1_Reception_Callback(void){
 	}
 }
 
-
+#define IMPLEMENT_USART6_ISR_IN_MAIN
+#ifndef IMPLEMENT_USART6_ISR_IN_MAIN
 // Callback de UART6 - Recepción como terminal (antes en stm32f4xx_it.c, ahora referenciado desde allí
-// via main.h)
+// via main.h) -
+// 22.4.19 Corregido para LL_USART_ReceiveData8, recibe tipo uint8_t, y agregamos DEBUG_USART6
+// con un printout para verificar
+
 void USART6_Reception_Callback(void){
-	uint16_t data_byte;
+
+	uint8_t data_byte;  // LL_ requirese 8 bit
 	//a data byte is received from the user
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+	char dbg_msg[10];
+
 	data_byte = LL_USART_ReceiveData8(USART6);
 
-	command_buffer[command_len++] = (data_byte & 0xFF) ;
+	#ifdef DEBUG_USART6
+      sprintf(dbg_msg,"\r\n %c",data_byte);
+      printmsg(dbg_msg);
+	#endif
+
+	command_buffer[command_len++] = data_byte;
 
 	if(data_byte == '\r')
 	{
@@ -560,7 +821,15 @@ void USART6_Reception_Callback(void){
 		// lets notify the Display Task
 		// TaskHandle_t xTaskHandleDisplay -  Task 1 Display Handle
 	    // xTaskCreate(vTask_Display,"TASK_DISPLAY-1",500,NULL,1,&xTaskHandleDisplay);
+		// Avisar al command handling task
+        #ifdef DEBUG_USART6B
+          sprintf(dbg_msg,"\r\n NotCmh");
+          printmsg(dbg_msg);
+	    #endif
+		xTaskNotifyFromISR(xTaskHandleUart6CmdH,0,eNoAction,&xHigherPriorityTaskWoken);
+        // y despues al que imprime el menu..
 		xTaskNotifyFromISR(xTaskHandleDisplay,0,eNoAction,&xHigherPriorityTaskWoken);
+
 	}
 	// if the above freertos apis wake up any higher priority task, then yield the processor to the
 	//higher priority task which is just woken up.
@@ -569,6 +838,61 @@ void USART6_Reception_Callback(void){
 		taskYIELD();
 	}
 }
+#else
+// Implementar localmente la ISR.. 22.4.19 14:00
+void USART6_IRQHandler(void)
+{
+  /* USER CODE BEGIN USART6_IRQn 0 */
+	uint8_t data_byte;  // LL_ requirese 8 bit
+	//a data byte is received from the user
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+	char dbg_msg[20];
+
+	if( LL_USART_IsActiveFlag_RXNE(USART6) && LL_USART_IsEnabledIT_RXNE(USART6))
+		{
+
+		// Former USART6_Reception_Callback();
+		data_byte = LL_USART_ReceiveData8(USART6);
+
+		#ifdef DEBUG_USART6B
+		      sprintf(dbg_msg,"\r\n %c",data_byte);
+		      printmsg(dbg_msg);
+		#endif
+
+		command_buffer[command_len++] = data_byte;
+
+		if(data_byte == '\r')
+			{
+				//then user is finished entering the data
+				//reset the command_len variable
+				command_len = 0;
+
+		        #ifdef DEBUG_USART6B
+		          sprintf(dbg_msg,"\r\n NotCmh");
+		          printmsg(dbg_msg);
+			    #endif
+				// Avisar al command handling task
+				xTaskNotifyFromISR(xTaskHandleUart6CmdH,0,eNoAction,&xHigherPriorityTaskWoken);
+		        // y despues al que imprime el menu..
+				xTaskNotifyFromISR(xTaskHandleDisplay,0,eNoAction,&xHigherPriorityTaskWoken);
+
+			}
+			#ifdef DEBUG_USART6B
+				sprintf(dbg_msg,"\r\n NtCmHE");
+				printmsg(dbg_msg);
+			#endif
+			// if the above freertos apis wake up any higher priority task, then yield the processor to the
+			//higher priority task which is just woken up.
+			if(xHigherPriorityTaskWoken)
+			{
+				taskYIELD();
+			}
+
+
+		}
+
+}
+#endif
 
 
 /* USER CODE END 4 */
