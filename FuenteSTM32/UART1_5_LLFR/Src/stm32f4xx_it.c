@@ -176,7 +176,7 @@ void TIM1_UP_TIM10_IRQHandler(void)
 /**
   * @brief This function handles USART1 global interrupt.
   */
-// USART1_ISR R.Oliva 18.4.2019
+// USART1_ISR R.Oliva 18.4.2019 moved to main 24.4.2019
 // Recibe datos de METEO a 38400 por USART1
 // Global data:
 // uint8_t packet_buffer[PKTBUFSIZE];
@@ -199,7 +199,9 @@ void TIM1_UP_TIM10_IRQHandler(void)
 // 	c = (char)sscanf(packet,"%5d.%5d.%4d.%5d.%3d.%4x",&out_t,
 //		&out_b, &out_w_dir,&out_w_speed,
 //		&out_vbat,&checksum);  
-  
+
+#define IMPLEMENT_USART1_ISR_IN_MAIN
+#ifndef IMPLEMENT_USART1_ISR_IN_MAIN
 void USART1_IRQHandler(void)
 {
   /* USER CODE BEGIN USART1_IRQn 0 */
@@ -217,6 +219,7 @@ void USART1_IRQHandler(void)
 
   /* USER CODE END USART1_IRQn 1 */
 }
+#endif
 
 /**
   * @brief This function handles USART6 global interrupt.

@@ -52,9 +52,10 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+// 24.4.2019 -Make packet_content type char, 35+2 chars long
 typedef struct PACKET_OK
 { 
-    uint8_t packet_content[PACK_OK_LEN+1];
+  char packet_content[PACK_OK_LEN+2];
 } PACKET_OK_t;
 // 
 // v6 for use with METEO v20 uses packet "UUU$ttttt.bbbbb.dddd.sssss.vvv.CRCC*QQQ":  (WSpeed is 5 chars long) 
@@ -64,7 +65,7 @@ typedef struct PACKET_OK
 //      dddd  is 0000 to 3600, WDIR*10 in UWORD
 //      sssss is 00000 to 99999 from Anemometer / Thies.
 //      vvv   was voltage, not used.
-//      CRCC  is simple checksum
+//      CRCC  is simple checksum (paso a uint16_t)
 //      *QQQ  end identifier
 //      Total length from $ is: 5+1+5+1+4+1+5+1+3+1+4= then '*' =15+7+4+5 =31
 //      Total length form first U is 31+4 = 35
@@ -85,6 +86,16 @@ typedef struct APP_CMD
 	uint8_t COMMAND_ARGS[10];
 }APP_CMD_t;
 
+typedef struct sensor_holder {
+        int16_t IS_Aero;      // Current in 0-5V - Sampled
+        int16_t Vs_Vbat;      // Bat. Voltage in 0-5V - Sampled
+        int16_t Vs_OWind;     // OutDoor Wind Freq [Hz] from METEO / COM1
+        int16_t Vs_OWDir;     // OutDoor WindDirection 0-360.0 [º] from METEO / COM1
+        int16_t Vs_OTemp;     // External Temp 0-5V from METEO+NOMAD2/COM1
+        int16_t Vs_OBaro;     // Barometric Pressure 0-5V from METEO+NOMAD2/COM1
+} V_SENSOR_t;
+
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -96,13 +107,16 @@ typedef struct APP_CMD
 #define RTC_READ_DATE_TIME_COMMAND 	    4
 
 // Flag defines Nuevo Menu 21.4.19
-#define DEMO1_OFF   0
-#define DEMO1_ON    1
+// #define DEMO1_OFF   (uint8_t)(0)
+// #define DEMO1_ON    (uint8_t)(1)
 
 char TestCStr[] = "UUU$29335.10156.2562.15100.125.1095*QQQ";
 // y sin el tramo final:
-char okTestCStr[] = "UUU$29335.10156.2562.15100.125.1095";	
+// (corregido al valor en hexa = 57278 = 0xdfbe
+char okTestCStr[] = "UUU$29335.10156.2562.15100.125.DFBE";
 /* USER CODE END PD */
+
+
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
@@ -133,24 +147,41 @@ QueueHandle_t packet_queue       = NULL;   // ok packets queue handle
 QueueHandle_t output_write_queue = NULL;   // output write queue handle
 QueueHandle_t command_queue      = NULL;   // comandos via UART6 Terminal
 
-//software timer handler
+//software timer handle
 TimerHandle_t led_timer_handle = NULL;
+
+// Mutex handle declaration
+SemaphoreHandle_t xMutex       = NULL;    // Protects sensor_data
 
 // packet buffer
 uint8_t packet_buffer[PKTBUFSIZE];
 uint8_t packet_len = 0;
 uint8_t command_buffer[20];
-uint8_t command_len =0;
-uint8_t flag_demo_U1_sinCom = DEMO1_OFF;
+uint8_t command_len = 0 ;
+// 24.4.2019 command_selector - moved by user
+// with UART6 menu, changes what Task3 sends to output
+// uint8_t command_selector = 0;
+
+// Pasamos a memoria global 24.4.2019
+PACKET_OK_t new_packet;
+
+// Global Sensor values (int)
+V_SENSOR_t sensor_val;
+
+// Control
+int16_t  g_chk = 0;
+int16_t  g_items = 0;
+uint16_t  g_checksum = 0; // 25.4.19
+
 
 // Menu por USART 6
-// Nuevo menu 21.4.2019
+// Nuevo menu 24.4.2019
 char menu[]={"\
-\r\nToggle DEMO_UART1 (sinCom)----> 1 \
-\r\nToggle DEMO_UART1 (loopbk)----> 2 \
-\r\nToggle LEE UART1_METEO    ----> 3 \
-\r\nToggle LEE RTC_FECHA+HORA ----> 4 \
-\r\nEXIT_APP                  ----> 0 \
+\r\nImprime Viento de METEO   ----> 1 \
+\r\nImprime TempExterior MET  ----> 2 \
+\r\nImprime DirViento METEO   ----> 3 \
+\r\nImprime Info String MET    ---> 4 \
+\r\nDetener e imprimir Menu   ----> 0 \
 \r\nTipee su opcion : "};
 
 
@@ -178,16 +209,25 @@ void vTask_uart6_cmd_processing(void *params); // Task 8 = Terminal UART6 proces
 // Prints message out on UART6..
 void printmsg(char *msg);
 // Enviar Items leidos via UART1
-void print_items_message(char *task_msg, int16_t items);
-// Salida 2 - viento en UART1
-void print_Wind_Speed(char *task_msg, int16_t wspeed);
-// Salida 3 - Error en Outdoor Info
+void print_items_message(int16_t items);
+// Salida 1 - viento en UART1 - redef 25.4.2019
+void print_Wind_Speed(char *task_msg, int16_t wsp);
+// Salida 2 - Temp en UART1 - redef 25.4.2019
+void print_Out_Temp(char *task_msg, int16_t temp);
+// Salida 3 - DirViento en UART1 - redef 25.4.2019
+void print_Wind_Dir(char *task_msg, int16_t wdir);
+// Salida 4 - Contenidos String - redef 25.4.2019
+void print_String_Items(char *task_msg, uint16_t u6checksum, uint16_t u6chk, int16_t u6items);
+
+// Salida - Error en Outdoor Info
 void print_error_message(char *task_msg);
-// Futuro - Terminal
+// Codigo del U6 - Terminal
 uint8_t getCommandCode(uint8_t *buffer);
 // Futuro: comandos UART6 - Terminal - Argumentos
 void getArguments(uint8_t *buffer);
 // Implementado 21.4.19 para comando 1
+
+#ifdef MODO_DEMO_ON
 void toggle_demoU1_sinCom(char *task_msg);
 // No implementado
 void toggle_demoU1_Comloopbak(void);
@@ -195,10 +235,17 @@ void toggle_demoU1_Comloopbak(void);
 void toggle_leeU1Meteo(void);
 // Parcial
 void read_rtc_info(char *task_msg);
+#endif
 // 22 4 2019  -Start Reception Function
 // Rutinal LL requieren habilitación
 // (STMCubeF4 v1_24 - LLNucleo 411 Examples)
 void Start_Reception(void);
+// Salida U6 Menu - Error en Comando
+void print_Uart6_error_message(char *task_msg);
+// UART6 Mensaje Comando 1
+void print_Uart6_messageCmd1(char *task_msg);
+
+
 
 
 /* USER CODE END PFP */
@@ -252,13 +299,16 @@ int main(void)
   Start_Reception();
 
   // Create packet queue (up to 10 stripped packets)
-  packet_queue = xQueueCreate(10,sizeof(PACKET_OK_t*));
+  packet_queue = xQueueCreate(10,sizeof(PACKET_OK_t));
 
-  // Create the write queue (up to 30 chars)
-  output_write_queue = xQueueCreate(30,sizeof(char*));
+  // Create the write queue (up to 30 chars) - 24.4.19 ++to100 chars
+  output_write_queue = xQueueCreate(100,sizeof(char*));
 
   // 21.4.2019 create command queue
   command_queue = xQueueCreate(10,sizeof(APP_CMD_t*));
+
+  //24.4.2019 Zona protegida de Memoria Sensores
+  xMutex = xSemaphoreCreateMutex();
 
 
 	// tasks creation - RTOS1
@@ -273,11 +323,11 @@ int main(void)
 	// TaskHandle_t xTaskHandleWrUart6  = NULL;   // Task 4 Write_Uart6 Handle
 
 	
-	if((packet_queue != NULL) && (output_write_queue != NULL) && (command_queue != NULL))
+	if((packet_queue != NULL) && (output_write_queue != NULL) && (command_queue != NULL) && (xMutex != NULL) )
 	{
 		// Create task-1 vTask_Display
 		// TaskHandle_t xTaskHandleDisplay -  Task 1 Display Handle
-		xTaskCreate(vTask_Display,"TASK_DISPLAY-1",500,NULL,2,&xTaskHandleDisplay);
+		xTaskCreate(vTask_Display,"TASK_DISPLAY-1",500,NULL,1,&xTaskHandleDisplay);
 
 		// Create task-2 vTask_Check_Meteo_packet
 		// TaskHandle_t xTaskHandleChkMeteo - Task 2 CheckMeteo Handle
@@ -309,7 +359,7 @@ int main(void)
 	    vTaskStartScheduler();
 	}else
 	{
-		sprintf(usr_msg,"Fallo la creacion de las colas!\r\n");
+		sprintf(usr_msg,"Fallo la creacion de las colas / mutex!\r\n");
 		printmsg(usr_msg);
 
    }
@@ -381,7 +431,9 @@ void SystemClock_Config(void)
 void vTask_Display(void *params)
 {
 char *pData = menu;
-printmsg("\n\rTskDi1");
+#ifdef DEBUG_VERBOSE
+printmsg("\n\rTsk1");
+#endif
 vTaskDelay(20);
 	while(1)
 	{
@@ -389,6 +441,7 @@ vTaskDelay(20);
 
 		//Esperar indefinidamente.
 		xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
+		vTaskDelay(pdMS_TO_TICKS(50)); //23.4.19
 
 	}
 }
@@ -398,7 +451,8 @@ vTaskDelay(20);
 // En modo Demo, con uint8_t flag_demo_U1_sinCom = DEMO1_ON
 // envía cada 1000 ms un paquete de muestra - sino en OFF
 // espera notificación de un paquete via UART1
-// 23.4.2019 Corregir acceso:new_packet-> packet_content
+// 24.4.2019 Sacamos modo Demo, solo String ISR_UART1
+// Copiado y pasado al Packet queue, delay 0
 void vTask_Check_Meteo_packet(void *params)
 {
 // uint8_t command_code=0;
@@ -406,89 +460,127 @@ void vTask_Check_Meteo_packet(void *params)
 // {
 //    uint8_t packet_content[PACK_OK_LEN+1];
 // } PACKET_OK_t;
-PACKET_OK_t *new_packet;
+// PACKET_OK_t *new_packet;
 #ifdef DEBUG_VERBOSE
-   printmsg("\n\rTskChM2");
+   printmsg("\n\rTsk2");
 #endif
-vTaskDelay(20);
+//vTaskDelay(20);
 	while(1)
 	{
-		// Si no está en modo Demo, esperar indefinidamente a UART1
-		// en modo "Demo1" generar un string de muestra cada 1000 ms
-		if (flag_demo_U1_sinCom == DEMO1_OFF)
-		{
-		 xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
-		}
-		else
-		{
-		 vTaskDelay(pdMS_TO_TICKS(1000));
-		}
-		//1. allocate space..
-		new_packet = (PACKET_OK_t*) pvPortMalloc(sizeof(PACKET_OK_t));
+        // Sacamos modo Demo, esperamos String de ISR_UART1
+		// En vez de PortMaxDelay, que espere 1500 ms pdMS_TO_TICKS(1500));
+		// xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
+		vTaskDelay(pdMS_TO_TICKS(500));
 
-		taskENTER_CRITICAL();
-		// From WG Book - Minimal printf facility
-		// requires miniprintf.c / .h pair
+		// 1. allocate space.. Not used
+	    // new_packet = (PACKET_OK_t*) pvPortMalloc(sizeof(PACKET_OK_t));
+
+		//taskENTER_CRITICAL();
 		// make a copy of the buffer_packet to new_packet
-		#ifdef PACKET_COPIAR
-		mini_snprintf(new_packet->packet_content, PACK_OK_LEN,"%s",packet_buffer)
-		#else
-		// Copiamos uno de muestra
-	    // char okTestCStr[] = "UUU$29335.10156.2562.15100.125.1095";	
-		sprintf(new_packet->packet_content,"%s",okTestCStr);
-		#endif
-		taskEXIT_CRITICAL();
+		// strncpy(new_packet->packet_content, packet_buffer,PACK_OK_LEN);
+		strncpy(new_packet.packet_content, okTestCStr,PACK_OK_LEN);
+		// Copiamos uno de muestra (corregido 25.42019)
+	    // char okTestCStr[] = "UUU$29335.10156.2562.15100.125.dfbe";
+		//sprintf(new_packet->packet_content,"%s",okTestCStr);
+		//taskEXIT_CRITICAL();
 
-		//send the paquet to the packet queue
-		xQueueSend(packet_queue,&new_packet,portMAX_DELAY);
+		// 24.4.2019 Delay
+		xQueueSend(packet_queue,&new_packet, portMAX_DELAY);
 
+		vTaskDelay(pdMS_TO_TICKS(50));
 	}
 
 }
 
 // Task3 vTask_Process_OutdoorInfo - el paquete
 // de METEO por UART1 es procesado para sacar la info
-// 23.4.2019 Idem Corregir acceso:new_packet-> packet_content
+// 24.4.2019
+// Menu por USART 6
+// Nuevo menu 24.4.2019
+// char menu[]={"
+// Imprime Viento de METEO   ----> 1
+// Imprime TempExterior MET  ----> 2
+// Imprime DirViento METEO   ----> 3
+// Imprime Info S Completo MET---> 4
+// nDetener e imprimir Menu   ----> 0
+// 24.4.19 Copiar datos a
+// Control
+// int16_t  g_chk = 0;
+// in t16_t  g_items = 0;
+//    V_SENSOR_t sensor_val;
+//typedef struct sensor_holder {
+//        int16_t IS_Aero;      // Current in 0-5V - Sampled
+//        int16_t Vs_Vbat;      // Bat. Voltage in 0-5V - Sampled
+//        int16_t Vs_OWind;     // OutDoor Wind Freq [Hz] from METEO / COM1
+//        int16_t Vs_OWDir;     // OutDoor WindDirection 0-360.0 [º] from METEO / COM1
+//        int16_t Vs_OTemp;     // External Temp 0-5V from METEO+NOMAD2/COM1
+//        int16_t Vs_OBaro;     // Barometric Pressure 0-5V from METEO+NOMAD2/COM1
+// V_SENSOR_t;
+
+
 void vTask_Process_OutdoorInfo(void *params)
 {
-	PACKET_OK_t *new_packet;
-	char task_msg[50];
+	// PACKET_OK_t *new_packet;
+	// char task_msg[50];
 	char out_id[6];
 	uint16_t chk = 0;
     int16_t items = 0;
-	int16_t out_t,out_b, out_w_speed,out_vbat;
-    int16_t out_w_dir;
-	int16_t checksum;  // temporary variables
+	int16_t out_t =0;
+	int16_t out_b = 0;
+	int16_t out_w_speed = 0;
+	int16_t out_vbat = 0;
+    int16_t out_w_dir = 0;
+	uint16_t checksum = 0;  // temporary variables 25.4.19 checksum unsigned
 	//uint32_t toggle_duration = pdMS_TO_TICKS(500);
     #ifdef DEBUG_VERBOSE
-	 printmsg("\n\rTskPrOu3");
+	 printmsg("\n\rTsk3");
     #endif
 
 	while(1)
 	{
 		xQueueReceive(packet_queue,(void*)&new_packet,portMAX_DELAY);
+        // printmsg("\n\r1");
 
-		items = sscanf(new_packet->packet_content,"%4s%5hd.%5hd.%4hd.%5hd.%3hd.%4hx",&out_id,&out_t,
-		&out_b, &out_w_dir,&out_w_speed, &out_vbat,&checksum);
+		items = sscanf(new_packet.packet_content,"%4s%5hd.%5hd.%4hd.%5hd.%3hd.%4hx",&out_id,&out_t,
+		 &out_b, &out_w_dir,&out_w_speed, &out_vbat,&checksum);
 		
-		print_items_message(task_msg, items);
+		// print_items_message(items);
+		// void print_items_message(char *task_msg, int16_t items)
+		// sprintf("\n\r I %d, o_v %d", items, out_vbat);
+		// printmsg(task_msg);
 		
 		chk = out_t + out_b + out_w_dir;
 	    chk += out_w_speed + out_vbat;
 
-     
+	    // Protect Access
+        xSemaphoreTake(xMutex, portMAX_DELAY);
+
+        sensor_val.Vs_OTemp = out_t;
+        sensor_val.Vs_OBaro = out_b;
+        sensor_val.Vs_OWind = out_w_speed;
+        sensor_val.Vs_OWDir = out_w_dir;
+        g_checksum = checksum;
+        g_chk = chk;
+        g_items = items;
+
+        xSemaphoreGive(xMutex);
+
+        /* solucion anterior
 	    if((chk == checksum) && (items == 7))
 		{
 		print_Wind_Speed(task_msg, out_w_speed);
 		}
 		else
 		{
-			print_error_message(task_msg);
+		print_error_message(task_msg);
 		}
+		*/
+		// enviar a QB_output a Terminal, delay 0
+		// xQueueSend(output_write_queue,&task_msg, portMAX_DELAY);
 
-		//lets free the allocated memory for the new packet
-		vPortFree(new_packet);
-
+		// liberar memoria de new_packet - ya no usado
+		// vPortFree(new_packet);
+		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 }
 
@@ -496,13 +588,14 @@ void vTask_Process_OutdoorInfo(void *params)
 void vTask_PrintError(void *params)
 {
 	char pData[] = "Error en Recepcion";
-	printmsg("\n\rTskPe5");
+	printmsg("\n\rTsk5");
 	vTaskDelay(20);
 	while(1)
 	{
 		xTaskNotifyWait(0,0,NULL,portMAX_DELAY);
 		//1. allocate space..
 		xQueueSend(output_write_queue,&pData,portMAX_DELAY);
+		vTaskDelay(pdMS_TO_TICKS(50));
 	}
 
 }
@@ -513,13 +606,14 @@ void vTask_PrintError(void *params)
 void vTask_Write_Uart6(void *params)
 {
 	char *pData = NULL;
-	printmsg("\n\rTskU4..");
+	printmsg("\n\rTs4..");
 	vTaskDelay(20);
 	while(1)
 	{
 
         xQueueReceive(output_write_queue,&pData,portMAX_DELAY);
 		printmsg(pData);
+		vTaskDelay(pdMS_TO_TICKS(50));
 
 	}
 }
@@ -564,19 +658,52 @@ void vTask_uart6_cmd_handling(void *params)   // Task 7 = Terminal UART6 Cmd_Han
 		#endif
 		// enviar al command queue 21.4.19
 		xQueueSend(command_queue,&new_cmd,portMAX_DELAY);
+		vTaskDelay(pdMS_TO_TICKS(50));
 	}
 }
 
 
-// void vTask6_cmd_processing - ejecuta los comandos de la cola
+// Task 8 void vTask_uart6_cmd_processing - ejecuta los comandos de la cola
 // de comandos alimentada por el task anterior
+// int16_t out_t =0;
+// int16_t out_b = 0;
+// int16_t out_w_speed = 0;
+// int16_t out_vbat = 0;
+// int16_t out_w_dir = 0;
+// uint16_t checksum = 0;  // temporary variables
+// Valores del String transmitido por METEO:
+// v6 for use with METEO v20 uses packet "UUU$ttttt.bbbbb.dddd.sssss.vvv.CRCC*QQQ":  (WSpeed is 5 chars long)
+//      UUU$   start identifier
+//      ttttt is 00000 08191 Raw Temperature ADC reading, can be 0-5V( Direct sensor with G=2) or 1-5V (4-20mA)
+//      bbbbb is 00000 08191 Raw BaroPressure ADC reading, can be 0-5V( Direct sensor with G=1) or 1-5V (4-20mA)
+//      dddd  is 0000 to 3600, WDIR*10 in UWORD
+//      sssss is 00000 to 99999 from Anemometer / Thies.
+//      vvv   was voltage, not used.
+//      CRCC  is simple checksum
+//      *QQQ  end identifier
+// Si se usa el de muestra:
+// char okTestCStr[] = "UUU$29335.10156.2562.15100.125.1095";
+//  Imprime Viento de METEO   ----> 1
+//  Imprime TempExterior MET  ----> 2
+//  Imprime DirViento METEO   ----> 3
+//  Imprime Info String MET    ---> 4
+//  Detener e imprimir Menu   ----> 0
+//  Tipee su opcion : "};
+
 // Task 8 = Terminal UART6 proceso comandos
+
 void vTask_uart6_cmd_processing(void *params)
 {
 	APP_CMD_t *new_cmd;
-	char task_msg[50];
-
-	// uint32_t toggle_duration = pdMS_TO_TICKS(500);
+	char task_msg[70];
+	uint8_t local_command_sel = 0;
+	uint16_t u6chk = 0;
+    int16_t u6items = 0;
+    int16_t outtemp=0;
+	int16_t u6outbaro = 0;
+	int16_t u6outwindspeed = 0;
+    int16_t u6outwinddir = 0;
+	uint16_t u6checksum = 0;
 
 	while(1)
 	{
@@ -587,29 +714,44 @@ void vTask_uart6_cmd_processing(void *params)
 			printmsg(task_msg);
 		#endif
 
-		if(new_cmd->COMMAND_NUM == TOG_DEMO_U1_SINCOMM_COMMAND)
+	    xSemaphoreTake(xMutex, portMAX_DELAY);
+	    outtemp = sensor_val.Vs_OTemp;
+	    u6outbaro = sensor_val.Vs_OBaro;
+	    u6outwindspeed = sensor_val.Vs_OWind;
+	    u6outwinddir = sensor_val.Vs_OWDir;
+	    u6checksum = g_checksum;
+	    u6chk  = g_chk;
+	    u6items = g_items;
+	    xSemaphoreGive(xMutex);
+
+		if(new_cmd->COMMAND_NUM == 1)
 		{
-			toggle_demoU1_sinCom(task_msg);      // Opcion 1
+			print_Uart6_messageCmd1(task_msg);
+			print_Wind_Speed(task_msg, u6outwindspeed);
 		}
-		else if(new_cmd->COMMAND_NUM == TOG_DEMO_U1_LOOPBK_COMMAND)
+		else if(new_cmd->COMMAND_NUM == 2)
 		{
-			toggle_demoU1_Comloopbak();  // Opcion 2
+			print_Out_Temp(task_msg, outtemp);
 		}
-		else if(new_cmd->COMMAND_NUM == TOG_LEE_U1_METEO_COMMAND)
+		else if(new_cmd->COMMAND_NUM == 3)
 		{
-			toggle_leeU1Meteo();
+			print_Wind_Dir(task_msg, u6outwinddir);
 		}
-		else if(new_cmd->COMMAND_NUM == RTC_READ_DATE_TIME_COMMAND )
+		else if(new_cmd->COMMAND_NUM == 4 )
 		{
-			read_rtc_info(task_msg);
+			print_String_Items(task_msg, u6checksum, u6chk, u6items);
 		}else
 		{
-			print_error_message(task_msg);
+			local_command_sel = 0;
+			print_Uart6_error_message(task_msg);
 		}
 
 		// liberar memoria asignada a new_cmd
 		vPortFree(new_cmd);
-
+		vTaskDelay(pdMS_TO_TICKS(50));
+		if (local_command_sel == 0){
+			xTaskNotify(xTaskHandleDisplay,0,eNoAction);
+		}
 	}
 }
 
@@ -636,24 +778,57 @@ void printmsg(char *msg)
 
 // Funciones de Salida al UART6 18.4.19
 
-// Salida 1 - items recibidos de UART1
-void print_items_message(char *task_msg, int16_t items)
+// UART6 Mensaje Comando 1
+void print_Uart6_messageCmd1(char *task_msg)
 {
-	sprintf( task_msg,"\r\n Items leidos Outdoor %d\r\n", items);
+	sprintf( task_msg,"\r\n Comando 1\r\n");
 	xQueueSend(output_write_queue,&task_msg,portMAX_DELAY);
 }
 
-// Salida 2 - viento en UART1
-void print_Wind_Speed(char *task_msg, int16_t wspeed)
+// Salida 1 - viento en UART1 -25-4-19
+void print_Wind_Speed(char *task_msg, int16_t wsp)
 {
-	sprintf( task_msg,"\r\n Velocidad de viento %d\r\n", wspeed);
-	xQueueSend(output_write_queue,&task_msg,portMAX_DELAY);
+	sprintf( task_msg,"\r\n Veloc viento %d \r\n", wsp);
+	xQueueSend(output_write_queue,&task_msg, portMAX_DELAY);
 }
 
-// Salida 3 - Error en Outdoor Info
+// Salida 2 - Temp en UART1 - redef 25.4.2019
+void print_Out_Temp(char *task_msg, int16_t temp)
+{
+	sprintf( task_msg,"\r\n Temp Ext %d \r\n", temp);
+	xQueueSend(output_write_queue,&task_msg, portMAX_DELAY);
+}
+
+// Salida 3 - DirViento en UART1 - redef 25.4.2019
+void print_Wind_Dir(char *task_msg, int16_t wdir)
+{
+	sprintf( task_msg,"\r\n Direcc. viento %d \r\n", wdir);
+	xQueueSend(output_write_queue,&task_msg, portMAX_DELAY);
+}
+
+// Salida 4 - u6checksum = g_checksum; u6chk  = g_chk;
+//            u6items = g_items;
+// uint16_t u6chk = 0; int16_t u6items = 0;
+// redef 25.4.2019
+
+void print_String_Items(char *task_msg, uint16_t u6checksum, uint16_t u6chk, int16_t u6items)
+{
+	sprintf( task_msg,"\r\n Leido: Chks %d  Calc: chk %d Items: %d\r\n",u6checksum, u6chk, u6items);
+	xQueueSend(output_write_queue,&task_msg, portMAX_DELAY);
+}
+
+
+// Salida  - Error en Outdoor Info
 void print_error_message(char *task_msg)
 {
 	sprintf( task_msg,"\r\n Error en OutdoorInfo\r\n");
+	xQueueSend(output_write_queue,&task_msg,portMAX_DELAY);
+}
+
+// UART6 Error en Comando
+void print_Uart6_error_message(char *task_msg)
+{
+	sprintf( task_msg,"\r\n Comando no reconocido\r\n");
 	xQueueSend(output_write_queue,&task_msg,portMAX_DELAY);
 }
 
@@ -678,28 +853,30 @@ void getArguments(uint8_t *buffer)
 // envía cada 1000 ms un "paqueteOK" de muestra - sino en OFF
 // espera notificación de un paquete via UART1
 
+#ifdef MODO_DEMO_ON
 void toggle_demoU1_sinCom(char *task_msg)
 {
 	uint8_t flag_copy = 0;
 	// Hacer una copia del estado actual del Flag e invertirlo
 	taskENTER_CRITICAL();
-	flag_copy = flag_demo_U1_sinCom;
 	if (flag_demo_U1_sinCom == DEMO1_OFF){
 		flag_demo_U1_sinCom = DEMO1_ON;
 	    }
 		else {
 		flag_demo_U1_sinCom = DEMO1_OFF;
 		}
+	flag_copy = flag_demo_U1_sinCom;
 	taskEXIT_CRITICAL();
-	// Si estaba en OFF, aviso que pasamos a ON, sinó al reves
+	// aviso que pasamos a ON o OFF
 	if (flag_copy == DEMO1_OFF){
-		sprintf( task_msg,"\r\n Demo sin Com = ON\r\n");
+		sprintf( task_msg,"\r\n Demo sin Com = %d OFF\r\n", flag_copy);
 		}
 	else {
-		sprintf( task_msg,"\r\n Demo sin Com = OFF\r\n");
+		sprintf( task_msg,"\r\n Demo sin Com = %d ON\r\n", flag_copy);
 	    }
 	xQueueSend(output_write_queue,&task_msg,portMAX_DELAY);
 }
+
 
 // Funcion toggle_demoU1_Comloopbak() - demo con Loopback
 // No implementada
@@ -714,6 +891,7 @@ void toggle_leeU1Meteo(void)
 {
 
 }
+#endif
 
 // Funcion read_rtc_info(task_msg) - RTC needs to be included 22.4.2019
 void read_rtc_info(char *task_msg)
@@ -731,7 +909,9 @@ void read_rtc_info(char *task_msg)
 #endif
 }
 
-// Taken from
+// Taken from LL_UART - Requires RXNE IT Enable
+// Testing
+#define RX_UART1_EN
 void Start_Reception(void){
 	// Habilitar Flags limpieza y Recepcion
 	sprintf(usr_msg,"\r\n Inicio Recepcion UART6 \r\n");
@@ -740,17 +920,25 @@ void Start_Reception(void){
 	LL_USART_ClearFlag_ORE(USART6);
 	// Habilitar Interrupcion pr RXNE (Rx Not Empty)
 	LL_USART_EnableIT_RXNE(USART6);
+#ifdef RX_UART1_EN
 	sprintf(usr_msg,"\r\n Inicio Recepcion UART1 \r\n");
 	printmsg(usr_msg);
 	// Limpiar Overrun Flag UART1
 	LL_USART_ClearFlag_ORE(USART1);
 	// Habilitar Interrupcion pr RXNE (Rx Not Empty)
 	LL_USART_EnableIT_RXNE(USART1);
+#endif
 }
 
 
+
+
+
 // Funciones de CallBack
-// Callback de USART1 - Recepción (antes en stm32f4xx_it.c, ahora referenciado desde allí)
+// USART1 - Recepción (antes en stm32f4xx_it.c, aqui)
+// USART1_ISR R.Oliva 18.4.2019 moved to main 24.4.2019
+#define IMPLEMENT_USART1_ISR_IN_MAIN
+#ifndef IMPLEMENT_USART1_ISR_IN_MAIN
 void USART1_Reception_Callback(void){
 	uint16_t data_byte;
 	//a data byte is received from the user
@@ -774,7 +962,9 @@ void USART1_Reception_Callback(void){
 				//reset the packet_len variable
 				packet_len = 0;
 				// notify printError Task
-				xTaskNotifyFromISR(xTaskHandlePrintErr,0,eNoAction,&xHigherPriorityTaskWoken);
+				// xTaskNotifyFromISR(xTaskHandlePrintErr,0,eNoAction,&xHigherPriorityTaskWoken);
+				// to test just send whatever.. 24.4.2019
+				xTaskNotifyFromISR(xTaskHandleChkMeteo,0,eNoAction,&xHigherPriorityTaskWoken);
 			}
 	        else{
 				// do nothing
@@ -785,6 +975,54 @@ void USART1_Reception_Callback(void){
 	if(xHigherPriorityTaskWoken)
 	{
 		taskYIELD();
+	}
+}
+#endif
+
+
+// USART1_ISR R.Oliva 18.4.2019 moved to main 24.4.2019
+void USART1_IRQHandler(void)
+{
+  	uint8_t data_byte;  // LL_ requiere 8 bit
+	//a data byte is received from the user
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+	// char dbg_msg[20];
+
+	if( LL_USART_IsActiveFlag_RXNE(USART1) && LL_USART_IsEnabledIT_RXNE(USART1))
+		{
+		data_byte = LL_USART_ReceiveData8(USART1);
+
+		packet_buffer[packet_len++] = data_byte;
+
+		if((data_byte == '*' ) && (packet_len == PACK_OK_LEN))
+				{
+					//then packet is ok..
+					//reset the packet_len variable
+					packet_len = 0;
+
+					//notify the CheckMeteoHand task
+					xTaskNotifyFromISR(xTaskHandleChkMeteo,0,eNoAction,&xHigherPriorityTaskWoken);
+				}
+				else if(packet_len > PACK_OK_LEN)
+				{
+					//then packet is corrupt..
+					//reset the packet_len variable
+					packet_len = 0;
+					// notify printError Task
+					// xTaskNotifyFromISR(xTaskHandlePrintErr,0,eNoAction,&xHigherPriorityTaskWoken);
+					// to test just send whatever.. 24.4.2019
+					xTaskNotifyFromISR(xTaskHandleChkMeteo,0,eNoAction,&xHigherPriorityTaskWoken);
+				}
+		        else{
+					// do nothing
+				}
+		// if the above freertos apis wake up any higher priority task, then yield the processor to the
+		//higher priority task which is just woken up.
+
+		if(xHigherPriorityTaskWoken)
+		{
+			taskYIELD();
+		}
 	}
 }
 
@@ -846,7 +1084,7 @@ void USART6_IRQHandler(void)
 	uint8_t data_byte;  // LL_ requirese 8 bit
 	//a data byte is received from the user
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-	char dbg_msg[20];
+	// char dbg_msg[20];
 
 	if( LL_USART_IsActiveFlag_RXNE(USART6) && LL_USART_IsEnabledIT_RXNE(USART6))
 		{
@@ -873,8 +1111,8 @@ void USART6_IRQHandler(void)
 			    #endif
 				// Avisar al command handling task
 				xTaskNotifyFromISR(xTaskHandleUart6CmdH,0,eNoAction,&xHigherPriorityTaskWoken);
-		        // y despues al que imprime el menu..
-				xTaskNotifyFromISR(xTaskHandleDisplay,0,eNoAction,&xHigherPriorityTaskWoken);
+		        // y despues al que imprime el menu.. 24.4.2019 dejar para el 0 de usuario..
+				// xTaskNotifyFromISR(xTaskHandleDisplay,0,eNoAction,&xHigherPriorityTaskWoken);
 
 			}
 			#ifdef DEBUG_USART6B
