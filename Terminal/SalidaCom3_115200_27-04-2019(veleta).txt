@@ -1,0 +1,171 @@
+
+ RTOS1 TP Final R.Oliva 2019 
+
+ Inicio Recepcion UART6 
+
+ Inicio Recepcion UART1 
+
+Tsk2
+Tsk3
+Ts4..
+Tsk5
+Tsk1
+Imprime Viento de METEO   ----> 1 
+Imprime TempExterior MET  ----> 2 
+Imprime DirViento METEO   ----> 3 
+Imprime Info String MET    ---> 4 
+Imprime Continuamente      ---> 5 
+Detener e imprimir Menu   ----> 0 
+Tipee su opcion : 
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd= 544 Rchk: 9012 Cchk: 9012 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd= 817 Rchk: 9285 Cchk: 9285 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=1184 Rchk: 9652 Cchk: 9652 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=1254 Rchk: 9722 Cchk: 9722 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=1318 Rchk: 9786 Cchk: 9786 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=1327 Rchk: 9795 Cchk: 9795 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=1340 Rchk: 9808 Cchk: 9808 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=1340 Rchk: 9808 Cchk: 9808 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=1540 Rchk: 10008 Cchk: 10008 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=1571 Rchk: 10039 Cchk: 10039 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=1635 Rchk: 10103 Cchk: 10103 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2020 Rchk: 10488 Cchk: 10488 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2020 Rchk: 10488 Cchk: 10488 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2020 Rchk: 10488 Cchk: 10488 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2020 Rchk: 10488 Cchk: 10488 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2020 Rchk: 10488 Cchk: 10488 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2020 Rchk: 10488 Cchk: 10488 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2020 Rchk: 10488 Cchk: 10488 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2020 Rchk: 10488 Cchk: 10488 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2020 Rchk: 10488 Cchk: 10488 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2020 Rchk: 10488 Cchk: 10488 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2568 Rchk: 11036 Cchk: 11036 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2615 Rchk: 11083 Cchk: 11083 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2709 Rchk: 11177 Cchk: 11177 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2709 Rchk: 11177 Cchk: 11177 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=2709 Rchk: 11177 Cchk: 11177 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3171 Rchk: 11639 Cchk: 11639 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3331 Rchk: 11799 Cchk: 11799 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3316 Rchk: 11784 Cchk: 11784 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3316 Rchk: 11784 Cchk: 11784 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3316 Rchk: 11784 Cchk: 11784 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3316 Rchk: 11784 Cchk: 11784 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3403 Rchk: 11871 Cchk: 11871 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3433 Rchk: 11901 Cchk: 11901 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3459 Rchk: 11927 Cchk: 11927 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3501 Rchk: 11969 Cchk: 11969 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3574 Rchk: 12042 Cchk: 12042 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3591 Rchk: 12059 Cchk: 12059 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3591 Rchk: 12059 Cchk: 12059 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3591 Rchk: 12059 Cchk: 12059 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=3462 Rchk: 11930 Cchk: 11930 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Dat: T= 8030 Vv=     0 Wd=   0 Rchk: 8468 Cchk: 8468 It: 6 Errs:0
+
+ Comando no reconocido
+
+Imprime Viento de METEO   ----> 1 
+Imprime TempExterior MET  ----> 2 
+Imprime DirViento METEO   ----> 3 
+Imprime Info String MET    ---> 4 
+Imprime Continuamente      ---> 5 
+Detener e imprimir Menu   ----> 0 
+Tipee su opcion : 
+ Veloc viento 0 
+
+ Direcc. viento 0 
+
+ Direcc. viento 3326 
